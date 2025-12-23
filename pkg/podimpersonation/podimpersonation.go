@@ -16,6 +16,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -370,6 +371,11 @@ func (s *PodImpersonation) createPod(ctx context.Context, user user.Info, role *
 	if err := s.createSecrets(ctx, role, pod, podOptions, client); err != nil {
 		return nil, err
 	}
+
+	if err := s.createPVC(ctx, user, pod, podOptions, client); err != nil {
+		return nil, err
+	}
+
 	pod.OwnerReferences = ref(role)
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
@@ -697,6 +703,58 @@ func (s *PodImpersonation) createConfigMaps(ctx context.Context, user user.Info,
 			}
 		}
 	}
+
+	return nil
+}
+
+func (s *PodImpersonation) createPVC(ctx context.Context, user user.Info, pod *v1.Pod, podOptions *PodOptions, client kubernetes.Interface) error {
+	pvcName := fmt.Sprintf("nfs-pvc-rancher-%s", user.GetName())
+	storageClassName := "nfs-client"
+	mountPath := "/home/shell/persistent_data"
+
+	_, err := client.CoreV1().PersistentVolumeClaims(pod.Namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		// 2. 如果不存在，则创建一个新的 PVC
+		pvc := &v1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pvcName,
+				Namespace: pod.Namespace,
+			},
+			Spec: v1.PersistentVolumeClaimSpec{
+				AccessModes: []v1.PersistentVolumeAccessMode{
+					v1.ReadWriteMany, // 根据 NFS 通常的需求设置为多读写
+				},
+				Resources: v1.VolumeResourceRequirements{
+					Requests: v1.ResourceList{
+						// 需求大小
+						v1.ResourceStorage: resource.MustParse("1Gi"),
+					},
+				},
+				StorageClassName: &storageClassName,
+			},
+		}
+		_, err = client.CoreV1().PersistentVolumeClaims(pod.Namespace).Create(ctx, pvc, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create PVC %s: %w", pvcName, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to get PVC %s: %w", pvcName, err)
+	}
+
+	// 3. 将该 PVC 添加到 Pod 的 Volumes 列表中
+	pod.Spec.Volumes = append(pod.Spec.Volumes, v1.Volume{
+		Name: pvcName,
+		VolumeSource: v1.VolumeSource{
+			PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+				ClaimName: pvcName,
+			},
+		},
+	})
+
+	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, v1.VolumeMount{
+		Name:      pvcName,
+		MountPath: mountPath,
+	})
 
 	return nil
 }
