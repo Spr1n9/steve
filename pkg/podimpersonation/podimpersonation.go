@@ -371,10 +371,8 @@ func (s *PodImpersonation) createPod(ctx context.Context, user user.Info, role *
 	if err := s.createSecrets(ctx, role, pod, podOptions, client); err != nil {
 		return nil, err
 	}
-
-	if err := s.createPVC(ctx, user, pod, podOptions, client); err != nil {
-		return nil, err
-	}
+	// 挂载nfs
+	s.mountNFS(ctx, user, pod, client)
 
 	pod.OwnerReferences = ref(role)
 	if pod.Annotations == nil {
@@ -722,7 +720,7 @@ func (s *PodImpersonation) createPVC(ctx context.Context, user user.Info, pod *v
 			},
 			Spec: v1.PersistentVolumeClaimSpec{
 				AccessModes: []v1.PersistentVolumeAccessMode{
-					v1.ReadWriteMany, // 根据 NFS 通常的需求设置为多读写
+					v1.ReadWriteMany,
 				},
 				Resources: v1.VolumeResourceRequirements{
 					Requests: v1.ResourceList{
@@ -757,4 +755,28 @@ func (s *PodImpersonation) createPVC(ctx context.Context, user user.Info, pod *v
 	})
 
 	return nil
+}
+
+func (s *PodImpersonation) mountNFS(ctx context.Context, user user.Info, pod *v1.Pod, client kubernetes.Interface) {
+	nfsDir := fmt.Sprint("/data/nfs/k8s/%s", user.GetName())
+	nfsHostIp := "10.48.1.135"
+	mountDir := "/home/shell/persistent_data"
+	volumeName := "persistent_data"
+
+	// 配置挂载点
+	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, v1.VolumeMount{
+		Name:      volumeName,
+		MountPath: mountDir,
+	})
+	// 配置挂载nfs
+	pod.Spec.Volumes = append(pod.Spec.Volumes, v1.Volume{
+		Name: volumeName,
+		VolumeSource: v1.VolumeSource{
+			NFS: &v1.NFSVolumeSource{
+				Path:   nfsDir,
+				Server: nfsHostIp,
+			},
+		},
+	})
+	return
 }
