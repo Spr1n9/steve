@@ -761,13 +761,19 @@ func (s *PodImpersonation) mountNFS(ctx context.Context, user user.Info, pod *v1
 	nfsDir := fmt.Sprintf("/data/nfs/k8s/%s", user.GetName())
 	nfsHostIp := "10.48.1.130"
 	mountDir := "/home/shell/persistent_data"
-	volumeName := "persistent_data"
+	volumeName := "persistent-data"
 
 	if clusterName, ok := ctx.Value("clusterName").(string); ok {
+		logrus.Infof("clusterName: %s", clusterName)
 		if clusterName == "local" {
 			nfsHostIp = "10.48.1.131"
 		}
+	}else{
+		logrus.Errorf("clusterName not found in context")
+		return
 	}
+
+	
 
 	// 配置挂载点
 	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, v1.VolumeMount{
