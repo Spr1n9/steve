@@ -758,15 +758,17 @@ func (s *PodImpersonation) createPVC(ctx context.Context, user user.Info, pod *v
 }
 
 func (s *PodImpersonation) mountNFS(ctx context.Context, user user.Info, pod *v1.Pod, client kubernetes.Interface) {
-	nfsDir := fmt.Sprint("/data/nfs/k8s/%s", user.GetName())
+	nfsDir := fmt.Sprintf("/data/nfs/k8s/%s", user.GetName())
 	nfsHostIp := "10.48.1.130"
 	mountDir := "/home/shell/persistent_data"
 	volumeName := "persistent_data"
 
-	if ctx.Value("clusterName").(string) == "local" {
-		nfsHostIp = "10.48.1.131"
+	if clusterName, ok := ctx.Value("clusterName").(string); ok {
+		if clusterName == "local" {
+			nfsHostIp = "10.48.1.131"
+		}
 	}
-	fmt.Println(ctx.Value("clusterName").(string))
+
 	// 配置挂载点
 	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, v1.VolumeMount{
 		Name:      volumeName,
