@@ -371,8 +371,6 @@ func (s *PodImpersonation) createPod(ctx context.Context, user user.Info, role *
 	if err := s.createSecrets(ctx, role, pod, podOptions, client); err != nil {
 		return nil, err
 	}
-	// 挂载nfs
-	s.mountNFS(ctx, user, pod, client)
 
 	pod.OwnerReferences = ref(role)
 	if pod.Annotations == nil {
